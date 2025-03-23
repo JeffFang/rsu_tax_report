@@ -22,7 +22,6 @@ def get_exchange_rate(date_str):
     
     # Fetch data for the entire month
     url = f"https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json?start_date={first_day}&end_date={last_day}"
-    print(f"url: {url}")
     response = requests.get(url).json()
     
     # Check for valid response
