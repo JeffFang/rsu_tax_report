@@ -4,7 +4,7 @@ from decimal import Decimal, getcontext
 from pdf_parser import extract_pdf_data
 from exchange_rate import get_exchange_rate
 from tax_calculator import calculate_tax_data, process_sale
-from spreadsheet_updater import update_spreadsheet
+from spreadsheet_updater import update_spreadsheet, create_annual_summary
 from sales_parser import parse_sales_csv
 
 getcontext().prec = 8  # Precision for financial calculations
@@ -139,6 +139,8 @@ def process_all_data(pdf_dir="pdfs", sales_csv="sells.csv"):
                 
         except Exception as e:
             print(f"Failed {transaction.get('date', 'N/A')}: {str(e)}")
+
+    create_annual_summary("stock_tracker.xlsx")
 
 if __name__ == "__main__":
     process_all_data()
