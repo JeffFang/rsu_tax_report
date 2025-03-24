@@ -9,7 +9,7 @@ COLUMNS = [
     "Sale Price (CAD)", "Exchange Rate", "Taxable Income (CAD)",
     "ACB Impact (USD)", "ACB Impact (CAD)", "ACB Remaining (USD)",
     "ACB Remaining (CAD)", "ACB per share (USD)", "Capital Gain/Loss (CAD)", 
-    "Shares Remaining"
+    "Capital Gain/Loss (USD)", "Shares Remaining"
 ]
 
 def update_spreadsheet(data, tax_data, exchange_rate, shares_remaining, 
@@ -29,6 +29,7 @@ def update_spreadsheet(data, tax_data, exchange_rate, shares_remaining,
         "ACB Remaining (USD)": acb_remaining_usd,
         "ACB Remaining (CAD)": acb_remaining_cad,
         "ACB per share (USD)": (acb_remaining_usd / shares_remaining) if shares_remaining else 0,
+        "Capital Gain/Loss (USD)": tax_data.get("capital_gain_loss_usd", 0.0),
         "Capital Gain/Loss (CAD)": tax_data.get("capital_gain_loss", 0.0)
     }
 
@@ -70,27 +71,47 @@ def update_spreadsheet(data, tax_data, exchange_rate, shares_remaining,
                        if_sheet_exists="replace" if mode == "a" else None) as writer:
         df.to_excel(writer, sheet_name="Transactions", index=False)
 
-# (create_annual_summary remains unchanged but will automatically include new columns)
 def create_annual_summary(output_path="stock_tracker.xlsx"):
-    """Generate Annual Summary with robust file existence checks."""
+    """Generate Annual Summary with USD and CAD columns."""
     if not os.path.exists(output_path):
         print("No transactions file found. Creating empty template.")
         with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
             pd.DataFrame(columns=COLUMNS).to_excel(writer, sheet_name="Transactions", index=False)
-            pd.DataFrame(columns=["Year", "Proceeds (CAD)", "Cost Basis (CAD)", "Capital Gain/Loss (CAD)"]).to_excel(writer, sheet_name="Annual Summary", index=False)
+            summary_columns = [
+                "Year", 
+                "Proceeds_USD", "Proceeds_CAD",
+                "Cost_Basis_USD", "Cost_Basis_CAD",
+                "Capital_Gain_Loss_USD", "Capital_Gain_Loss_CAD"
+            ]
+            pd.DataFrame(columns=summary_columns).to_excel(writer, sheet_name="Annual Summary", index=False)
         return
 
     try:
         # Read transactions data
         df = pd.read_excel(output_path, sheet_name="Transactions", engine="openpyxl")
         
-        # Create annual summary
+        # Filter and process sales data
         sales_df = df[df["Type"].isin(["Sale", "Sale_to_Cover"])].copy()
         sales_df["Year"] = pd.to_datetime(sales_df["Date"]).dt.year
+
+        # Calculate USD metrics directly from raw USD data
+        sales_df["Proceeds_USD"] = sales_df["Sale Price (USD)"] * abs(sales_df["Shares Added/Sold"])
+        sales_df["Cost_Basis_USD"] = abs(sales_df["ACB Impact (USD)"])  # ACB Impact is negative for sales
+        sales_df["Capital_Gain_Loss_USD"] = sales_df["Proceeds_USD"] - sales_df["Cost_Basis_USD"]
+
+        # CAD metrics (existing logic)
+        sales_df["Proceeds_CAD"] = sales_df["Sale Price (CAD)"] * abs(sales_df["Shares Added/Sold"])
+        sales_df["Cost_Basis_CAD"] = abs(sales_df["ACB Impact (CAD)"])
+        sales_df["Capital_Gain_Loss_CAD"] = sales_df["Proceeds_CAD"] - sales_df["Cost_Basis_CAD"]
+
+        # Group by year and aggregate
         annual_summary = sales_df.groupby("Year").agg(
-            Proceeds_CAD=("Sale Price (CAD)", lambda x: (x * abs(sales_df.loc[x.index, "Shares Added/Sold"])).sum()),
-            Cost_Basis_CAD=("ACB Impact (CAD)", lambda x: abs(x).sum()),
-            Capital_Gain_Loss_CAD=("Capital Gain/Loss (CAD)", "sum")
+            Proceeds_USD=("Proceeds_USD", "sum"),
+            Proceeds_CAD=("Proceeds_CAD", "sum"),
+            Cost_Basis_USD=("Cost_Basis_USD", "sum"),
+            Cost_Basis_CAD=("Cost_Basis_CAD", "sum"),
+            Capital_Gain_Loss_USD=("Capital_Gain_Loss_USD", "sum"),
+            Capital_Gain_Loss_CAD=("Capital_Gain_Loss_CAD", "sum"),
         ).reset_index()
 
         # Save annual summary
@@ -104,6 +125,4 @@ def create_annual_summary(output_path="stock_tracker.xlsx"):
 
     except Exception as e:
         print(f"Error generating annual summary: {str(e)}")
-        if os.path.exists(output_path):
-            os.remove(output_path)
         raise

@@ -54,21 +54,26 @@ def process_sale(sale_data, current_shares, current_acb_usd, exchange_rate):
     # ACB per share (USD)
     acb_per_share_usd = Decimal(str(current_acb_usd)) / Decimal(str(current_shares))
     
-    # Proceeds (USD -> CAD)
+    # Proceeds (USD)
     proceeds_usd = shares_sold * sale_price_usd
-    proceeds_cad = proceeds_usd * Decimal(str(exchange_rate))
     
-    # ACB of sold shares (USD -> CAD)
+    # ACB of sold shares (USD)
     acb_sold_usd = shares_sold * acb_per_share_usd
-    acb_sold_cad = acb_sold_usd * Decimal(str(exchange_rate))
     
-    # Capital gain/loss (CAD)
-    capital_gain_loss = proceeds_cad - acb_sold_cad
+    # Capital gain/loss (USD)
+    capital_gain_loss_usd = proceeds_usd - acb_sold_usd
+    
+    # CAD conversions
+    capital_gain_loss_cad = capital_gain_loss_usd * Decimal(str(exchange_rate))
     
     return {
-        "proceeds_cad": float(proceeds_cad),
+        # USD values
+        "proceeds_usd": float(proceeds_usd),
         "acb_sold_usd": float(acb_sold_usd),
-        "acb_sold_cad": float(acb_sold_cad),
-        "capital_gain_loss": float(capital_gain_loss),
-        "acb_per_share_usd": float(acb_per_share_usd)
+        "capital_gain_loss_usd": float(capital_gain_loss_usd),
+        
+        # CAD values
+        "proceeds_cad": float(proceeds_usd * Decimal(str(exchange_rate))),
+        "acb_sold_cad": float(acb_sold_usd * Decimal(str(exchange_rate))),
+        "capital_gain_loss_cad": float(capital_gain_loss_cad)
     }
