@@ -17,7 +17,7 @@ A Python tool to track ESPP, RSU, and stock sale transactions while automaticall
 - Python 3.10+
 - Required packages:
   ```bash
-  pandas openpyxl
+  pandas openpyxl numpy
 
 ## Installations
 1. Clone the repository:
@@ -30,7 +30,7 @@ cd stock-tracker
 ```bash
 pip install -r requirements.txt  # If you have a requirements file
 # OR
-pip install pandas openpyxl
+pip install pandas openpyxl numpy
 ```
 
 ## Usage
