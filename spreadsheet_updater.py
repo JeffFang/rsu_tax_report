@@ -2,41 +2,45 @@ import os
 import pandas as pd
 from openpyxl import load_workbook
 
+# Updated column list with new USD fields
 COLUMNS = [
     "Date", "Type", "Shares Added/Sold", "FMV (USD)", "FMV (CAD)",
     "Purchase Price (USD)", "Purchase Price (CAD)", "Sale Price (USD)",
     "Sale Price (CAD)", "Exchange Rate", "Taxable Income (CAD)",
-    "ACB Impact (CAD)", "Capital Gain/Loss (CAD)", "Shares Remaining",
-    "ACB Remaining (CAD)"
+    "ACB Impact (USD)", "ACB Impact (CAD)", "ACB Remaining (USD)",
+    "ACB Remaining (CAD)", "ACB per share (USD)", "Capital Gain/Loss (CAD)", 
+    "Shares Remaining"
 ]
 
-def update_spreadsheet(data, tax_data, exchange_rate, shares_remaining, acb_remaining, output_path="stock_tracker.xlsx"):
-    """Update Transactions sheet with proper file existence handling."""
+def update_spreadsheet(data, tax_data, exchange_rate, shares_remaining, 
+                      acb_remaining_usd, acb_remaining_cad, output_path="stock_tracker.xlsx"):
+    """Update Transactions sheet with USD-based ACB tracking."""
     try:
-        # Try reading existing file
         df = pd.read_excel(output_path, sheet_name="Transactions", engine="openpyxl")
     except (FileNotFoundError, ValueError):
-        # Create new DataFrame if file doesn't exist or is corrupted
         df = pd.DataFrame(columns=COLUMNS)
 
-    # Build new row
+    # New row template
     new_row = {
         "Date": data["date"],
         "Type": data["type"],
         "Exchange Rate": exchange_rate,
         "Shares Remaining": shares_remaining,
-        "ACB Remaining (CAD)": acb_remaining,
+        "ACB Remaining (USD)": acb_remaining_usd,
+        "ACB Remaining (CAD)": acb_remaining_cad,
+        "ACB per share (USD)": (acb_remaining_usd / shares_remaining) if shares_remaining else 0,
         "Capital Gain/Loss (CAD)": tax_data.get("capital_gain_loss", 0.0)
     }
 
-    # Handle different transaction types
+    # Transaction type handling
     if data["type"] == "RSU_Vest":
         new_row.update({
             "Shares Added/Sold": data["shares"],
             "FMV (USD)": data["fmv_usd"],
             "FMV (CAD)": data["fmv_usd"] * exchange_rate,
             "Taxable Income (CAD)": tax_data["taxable_income_cad"],
-            "ACB Impact (CAD)": tax_data["total_acb"]
+            "ACB Impact (USD)": tax_data["total_acb_usd"],
+            "ACB Impact (CAD)": tax_data["total_acb_cad"]
         })
     elif data["type"] == "ESPP":
         new_row.update({
@@ -46,29 +50,27 @@ def update_spreadsheet(data, tax_data, exchange_rate, shares_remaining, acb_rema
             "Purchase Price (USD)": data["purchase_price_usd"],
             "Purchase Price (CAD)": data["purchase_price_usd"] * exchange_rate,
             "Taxable Income (CAD)": tax_data["taxable_income_cad"],
-            "ACB Impact (CAD)": tax_data["total_acb"]
+            "ACB Impact (USD)": tax_data["total_acb_usd"],
+            "ACB Impact (CAD)": tax_data["total_acb_cad"]
         })
     elif data["type"] in ["Sale", "Sale_to_Cover"]:
         new_row.update({
             "Shares Added/Sold": -data["shares_sold"],
             "Sale Price (USD)": data["sale_price_usd"],
             "Sale Price (CAD)": data["sale_price_usd"] * exchange_rate,
+            "ACB Impact (USD)": -tax_data["acb_sold_usd"],
             "ACB Impact (CAD)": -tax_data["acb_sold_cad"]
         })
 
-    # Add to DataFrame
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-
-    # Save with openpyxl (for Numbers compatibility)
+    
+    # Save with proper Excel formatting
     mode = "a" if os.path.exists(output_path) else "w"
-    with pd.ExcelWriter(
-        output_path,
-        engine="openpyxl",
-        mode=mode,
-        if_sheet_exists="replace" if mode == "a" else None
-    ) as writer:
+    with pd.ExcelWriter(output_path, engine="openpyxl", mode=mode,
+                       if_sheet_exists="replace" if mode == "a" else None) as writer:
         df.to_excel(writer, sheet_name="Transactions", index=False)
 
+# (create_annual_summary remains unchanged but will automatically include new columns)
 def create_annual_summary(output_path="stock_tracker.xlsx"):
     """Generate Annual Summary with robust file existence checks."""
     if not os.path.exists(output_path):
