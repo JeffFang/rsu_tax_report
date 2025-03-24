@@ -1,6 +1,7 @@
 import os
 import pandas as pd
 from openpyxl import load_workbook
+import numpy as np
 
 # Updated column list with new USD fields
 COLUMNS = [
@@ -72,13 +73,13 @@ def update_spreadsheet(data, tax_data, exchange_rate, shares_remaining,
         df.to_excel(writer, sheet_name="Transactions", index=False)
 
 def create_annual_summary(output_path="stock_tracker.xlsx"):
-    """Generate Annual Summary with USD and CAD columns."""
+    """Generate Annual Summary with 2024 split into two periods."""
     if not os.path.exists(output_path):
         print("No transactions file found. Creating empty template.")
         with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
             pd.DataFrame(columns=COLUMNS).to_excel(writer, sheet_name="Transactions", index=False)
             summary_columns = [
-                "Year", 
+                "Year", "Period",
                 "Proceeds_USD", "Proceeds_CAD",
                 "Cost_Basis_USD", "Cost_Basis_CAD",
                 "Capital_Gain_Loss_USD", "Capital_Gain_Loss_CAD"
@@ -89,23 +90,38 @@ def create_annual_summary(output_path="stock_tracker.xlsx"):
     try:
         # Read transactions data
         df = pd.read_excel(output_path, sheet_name="Transactions", engine="openpyxl")
+        df["Date"] = pd.to_datetime(df["Date"])
         
         # Filter and process sales data
         sales_df = df[df["Type"].isin(["Sale", "Sale_to_Cover"])].copy()
-        sales_df["Year"] = pd.to_datetime(sales_df["Date"]).dt.year
+        sales_df["Year"] = sales_df["Date"].dt.year
+        
+        # Initialize Period column
+        sales_df["Period"] = "Full Year"
+        
+        # Split 2024 into two periods
+        mask_2024 = sales_df["Year"] == 2024
+        if mask_2024.any():  # Only process if 2024 data exists
+            # Create mask for period 1 (Jan 1 - Jun 24)
+            period1_mask = (sales_df["Date"] >= "2024-01-01") & (sales_df["Date"] <= "2024-06-24")
+            
+            # Update periods only for 2024 transactions
+            sales_df.loc[mask_2024, "Period"] = np.where(
+                period1_mask[mask_2024],  # Apply only to 2024 rows
+                "Period 1 (Jan 1 - Jun 24)",
+                "Period 2 (Jun 25 - Dec 31)"
+            )
 
-        # Calculate USD metrics directly from raw USD data
+        # Calculate metrics
         sales_df["Proceeds_USD"] = sales_df["Sale Price (USD)"] * abs(sales_df["Shares Added/Sold"])
-        sales_df["Cost_Basis_USD"] = abs(sales_df["ACB Impact (USD)"])  # ACB Impact is negative for sales
+        sales_df["Cost_Basis_USD"] = abs(sales_df["ACB Impact (USD)"])
         sales_df["Capital_Gain_Loss_USD"] = sales_df["Proceeds_USD"] - sales_df["Cost_Basis_USD"]
-
-        # CAD metrics (existing logic)
         sales_df["Proceeds_CAD"] = sales_df["Sale Price (CAD)"] * abs(sales_df["Shares Added/Sold"])
         sales_df["Cost_Basis_CAD"] = abs(sales_df["ACB Impact (CAD)"])
         sales_df["Capital_Gain_Loss_CAD"] = sales_df["Proceeds_CAD"] - sales_df["Cost_Basis_CAD"]
 
-        # Group by year and aggregate
-        annual_summary = sales_df.groupby("Year").agg(
+        # Group by Year and Period
+        annual_summary = sales_df.groupby(["Year", "Period"]).agg(
             Proceeds_USD=("Proceeds_USD", "sum"),
             Proceeds_CAD=("Proceeds_CAD", "sum"),
             Cost_Basis_USD=("Cost_Basis_USD", "sum"),
@@ -113,6 +129,14 @@ def create_annual_summary(output_path="stock_tracker.xlsx"):
             Capital_Gain_Loss_USD=("Capital_Gain_Loss_USD", "sum"),
             Capital_Gain_Loss_CAD=("Capital_Gain_Loss_CAD", "sum"),
         ).reset_index()
+
+        # Reorder columns and sort
+        annual_summary = annual_summary[[
+            "Year", "Period",
+            "Proceeds_USD", "Proceeds_CAD",
+            "Cost_Basis_USD", "Cost_Basis_CAD",
+            "Capital_Gain_Loss_USD", "Capital_Gain_Loss_CAD"
+        ]].sort_values(["Year", "Period"])
 
         # Save annual summary
         with pd.ExcelWriter(
